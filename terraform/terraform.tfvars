@@ -1,0 +1,5 @@
+alb_listener_arn = "arn:aws:elasticloadbalancing:us-west-2:345594586248:listener/app/external-private-alb/720e2b5474d3d602/b48ee8802ee87940"
+hosted_zone_id   = "Z03460043KOTMNXT03C7G"
+domain_name      = "unit-svc.g.fullbay.com"
+environment      = "sandbox"
+lambda_zip_path  = "../build/function.zip"

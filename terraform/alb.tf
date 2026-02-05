@@ -3,14 +3,6 @@ resource "aws_lb_target_group" "unit_service" {
   name        = "g-unit-service"
   target_type = "lambda"
 
-  health_check {
-    enabled             = false
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
-    timeout             = 3
-    interval            = 30
-  }
-
   tags = local.common_tags
 }
 
