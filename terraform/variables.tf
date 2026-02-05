@@ -15,3 +15,19 @@ variable "lambda_zip_path" {
   type        = string
   default     = "../build/function.zip"
 }
+
+variable "alb_listener_arn" {
+  description = "ARN of the external ALB HTTPS listener"
+  type        = string
+}
+
+variable "hosted_zone_id" {
+  description = "Route53 hosted zone ID for g.fullbay.com"
+  type        = string
+}
+
+variable "domain_name" {
+  description = "Domain name for the service (unit-svc.g.fullbay.com)"
+  type        = string
+  default     = "unit-svc.g.fullbay.com"
+}

@@ -30,3 +30,28 @@ output "current_region" {
 output "account_id" {
   value = data.aws_caller_identity.current.account_id
 }
+
+output "target_group_arn" {
+  description = "ARN of the ALB target group for Lambda"
+  value       = aws_lb_target_group.unit_service.arn
+}
+
+output "target_group_name" {
+  description = "Name of the ALB target group"
+  value       = aws_lb_target_group.unit_service.name
+}
+
+output "listener_rule_arn" {
+  description = "ARN of the ALB listener rule"
+  value       = aws_lb_listener_rule.unit_service.arn
+}
+
+output "dns_record_fqdn" {
+  description = "Fully qualified domain name for the service"
+  value       = aws_route53_record.unit_service.fqdn
+}
+
+output "alb_dns_name" {
+  description = "DNS name of the external ALB"
+  value       = data.aws_lb.external.dns_name
+}
