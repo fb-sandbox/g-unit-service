@@ -3,7 +3,6 @@ package com.fullbay.unit.repository;
 import com.amazonaws.xray.AWSXRay;
 import com.amazonaws.xray.entities.Subsegment;
 import com.fullbay.unit.model.entity.Unit;
-import com.fullbay.util.DynamoItemHelper;
 import com.fullbay.util.JacksonConverter;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -48,18 +47,17 @@ public class UnitRepository {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-save")) {
             segment.putAnnotation("unitId", entity.unitId());
 
-            final Map<String, AttributeValue> item =
-                    DynamoItemHelper.builder()
-                            .s("unitId", entity.unitId())
-                            .s("customerId", entity.customerId())
-                            .s("vin", entity.vin())
-                            .s(
-                                    "createdAt",
-                                    entity.createdAt() != null ? entity.createdAt().toString() : "")
-                            .map(entity)
-                            .build();
+            final Map<String, AttributeValue> entityMap = jacksonConverter.objectToMap(entity);
+            entityMap.put("unitId", AttributeValue.builder().s(entity.unitId()).build());
+            entityMap.put("customerId", AttributeValue.builder().s(entity.customerId()).build());
+            entityMap.put("vin", AttributeValue.builder().s(entity.vin()).build());
+            entityMap.put(
+                    "createdAt",
+                    AttributeValue.builder()
+                            .s(entity.createdAt() != null ? entity.createdAt().toString() : "")
+                            .build());
 
-            dynamoDbClient.putItem(req -> req.tableName(tableName).item(item));
+            dynamoDbClient.putItem(req -> req.tableName(tableName).item(entityMap));
             log.debug("Saved unit: {}", entity.unitId());
         }
     }
