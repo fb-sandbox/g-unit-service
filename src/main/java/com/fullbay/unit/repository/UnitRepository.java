@@ -47,17 +47,32 @@ public class UnitRepository {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-save")) {
             segment.putAnnotation("unitId", entity.unitId());
 
-            final Map<String, AttributeValue> entityMap = jacksonConverter.objectToMap(entity);
-            entityMap.put("unitId", AttributeValue.builder().s(entity.unitId()).build());
-            entityMap.put("customerId", AttributeValue.builder().s(entity.customerId()).build());
-            entityMap.put("vin", AttributeValue.builder().s(entity.vin()).build());
-            entityMap.put(
-                    "createdAt",
-                    AttributeValue.builder()
-                            .s(entity.createdAt() != null ? entity.createdAt().toString() : "")
-                            .build());
+            // Serialize entire Unit to DynamoDB MAP
+            final Map<String, AttributeValue> unitMap = jacksonConverter.objectToMap(entity);
 
-            dynamoDbClient.putItem(req -> req.tableName(tableName).item(entityMap));
+            // Store only key fields as separate attributes + entire Unit as MAP in data field
+            final Map<String, AttributeValue> item =
+                    Map.of(
+                            "unitId", AttributeValue.builder().s(entity.unitId()).build(),
+                            "customerId", AttributeValue.builder().s(entity.customerId()).build(),
+                            "vin", AttributeValue.builder().s(entity.vin()).build(),
+                            "createdAt",
+                                    AttributeValue.builder()
+                                            .s(
+                                                    entity.createdAt() != null
+                                                            ? entity.createdAt().toString()
+                                                            : "")
+                                            .build(),
+                            "updatedAt",
+                                    AttributeValue.builder()
+                                            .s(
+                                                    entity.updatedAt() != null
+                                                            ? entity.updatedAt().toString()
+                                                            : "")
+                                            .build(),
+                            "data", AttributeValue.builder().m(unitMap).build());
+
+            dynamoDbClient.putItem(req -> req.tableName(tableName).item(item));
             log.debug("Saved unit: {}", entity.unitId());
         }
     }
@@ -88,7 +103,9 @@ public class UnitRepository {
                 return Optional.empty();
             }
 
-            final Unit entity = jacksonConverter.mapToObject(response.item(), Unit.class);
+            // Deserialize from DynamoDB MAP data field
+            final Map<String, AttributeValue> unitMap = response.item().get("data").m();
+            final Unit entity = jacksonConverter.mapToObject(unitMap, Unit.class);
             log.debug("Retrieved unit: {}", unitId);
             return Optional.of(entity);
         }
