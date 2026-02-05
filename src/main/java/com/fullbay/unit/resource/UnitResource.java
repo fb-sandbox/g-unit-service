@@ -127,7 +127,7 @@ public class UnitResource {
      * @return API response with unit
      */
     @GET
-    @Path("/byVin/{vin}")
+    @Path("/vin/{vin}")
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(summary = "Get unit by VIN", description = "Retrieve a unit by its VIN")
     @APIResponses(
@@ -191,7 +191,7 @@ public class UnitResource {
      * @return API response with created unit
      */
     @POST
-    @Path("/fromVin")
+    @Path("/vin")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @Operation(
