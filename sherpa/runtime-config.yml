@@ -1,0 +1,36 @@
+default:
+  values:
+    app:
+      plainTextKey: my-bucket-123456789-us-west-2
+    level1:
+      levelKey: this is a key to show alternate parent values
+  secrets:
+    level1:
+      superSecretvalue: "AQICAH..."
+
+environments:
+  # localdev references the AWS "local dev" environment
+  localdev:
+  # eph_dev is for PR deployments
+  eph_dev:
+    values:
+      app:
+        plainKey: my value goes here
+    secrets:
+      secretKey: "AQICAH..."
+  dev:
+    secrets:
+      app:
+        secretKey: "AQICAH..."
+  qa:
+    secrets:
+      app:
+        secretKey: "AQICAH..."
+  stage:
+    secrets:
+      app:
+        secretKey: "AQICAH..."
+  prod:
+    secrets:
+      app:
+        secretKey: "AQICAH..."

@@ -1,0 +1,43 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+repositories {
+    mavenLocal()  // Check local Maven cache first (for testing unpublished versions)
+    mavenCentral()
+    maven {
+        url = 'https://fullbay-851725176053.d.codeartifact.us-west-2.amazonaws.com/maven/fullbay-maven/'
+        credentials {
+            username = "aws"
+            password = "$codeartifactToken"
+        }
+    }
+}
+
+dependencies {
+    // Piton integration testing library - includes JUnit, RestAssured, AWS SDK, etc.
+    implementation 'com.fullbay.idp.piton:idp-piton-java-lib:0.1.6'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+application {
+    mainClass = 'com.fullbay.idptemplatefun.integration.PitonIntegrationTests'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.fullbay.idptemplatefun.integration.PitonIntegrationTests'
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    // Explicitly include project resources (like junit-platform.properties)
+    from sourceSets.main.output
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
