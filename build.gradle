@@ -1,0 +1,153 @@
+plugins {
+    id 'java'
+    id 'io.quarkus' version "${quarkusPluginVersion}"
+    // id 'io.freefair.lombok' version '8.12'  // Using manual Lombok config instead
+    id 'com.diffplug.spotless' version '7.0.3'
+    id 'jacoco'
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    if (System.getenv('CODEARTIFACT_TOKEN') != null || project.hasProperty('codeartifactToken')) {
+        maven {
+            url = 'https://fullbay-851725176053.d.codeartifact.us-west-2.amazonaws.com/maven/fullbay-maven/'
+            credentials {
+                username = "aws"
+                password = System.getenv('CODEARTIFACT_TOKEN') ?: codeartifactToken
+            }
+        }
+    }
+}
+
+configurations {
+    lombokPlugin
+}
+
+dependencies {
+    // Lombok for code generation
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+    testCompileOnly 'org.projectlombok:lombok:1.18.30'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    implementation enforcedPlatform("${quarkusPlatformGroupId}:${quarkusPlatformArtifactId}:${quarkusPlatformVersion}")
+    implementation enforcedPlatform("${quarkusPlatformGroupId}:quarkus-amazon-services-bom:${quarkusPlatformVersion}")
+    implementation 'io.quarkus:quarkus-amazon-lambda-rest'
+    implementation 'io.quarkus:quarkus-arc'
+    implementation 'io.quarkus:quarkus-logging-json'
+    implementation 'io.quarkus:quarkus-config-yaml'
+    implementation 'io.quarkus:quarkus-info'
+    implementation 'io.quarkus:quarkus-rest'
+    implementation 'io.quarkus:quarkus-rest-jackson'
+    implementation 'io.quarkus:quarkus-rest-client-jackson'
+    implementation 'io.quarkus:quarkus-hibernate-validator'
+    implementation 'io.quarkus:quarkus-smallrye-openapi'
+
+    implementation 'software.amazon.awssdk:url-connection-client'
+    implementation 'software.amazon.awssdk:sso'
+    implementation 'software.amazon.awssdk:ssooidc'
+    implementation 'software.amazon.awssdk:sts'
+    implementation 'software.amazon.awssdk:dynamodb'
+
+    // FullBay utility libraries (require CodeArtifact token)
+    implementation 'com.fullbay.util:idp-dynamodb4j-lib:0.0.1-SNAPSHOT'
+    // implementation 'com.fullbay.util:idp-commonutil-lib:1.6.1'
+    // implementation 'com.fullbay.util:idp-config-lib:2.1.0'
+    // implementation 'com.fullbay.util:idp-snapstart-lib:1.0.0'
+
+    implementation platform('com.amazonaws:aws-xray-recorder-sdk-bom:2.18.2')
+    implementation 'com.amazonaws:aws-xray-recorder-sdk-core'
+
+    testImplementation 'io.quarkus:quarkus-test-security'
+    testImplementation 'io.quarkus:quarkus-junit5'
+    testImplementation 'io.quarkus:quarkus-junit5-mockito'
+    testImplementation 'io.quarkus:quarkus-jacoco' // include jacoco-report
+    testImplementation 'io.rest-assured:rest-assured'
+    testImplementation 'org.hamcrest:hamcrest'
+}
+
+group = 'com.fullbay'
+archivesBaseName = 'unit-service'
+version = '1.0.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+test {
+    systemProperty "java.util.logging.manager", "org.jboss.logmanager.LogManager"
+    useJUnitPlatform()
+
+    // Quarkus jacoco configuration
+    // Tests annotated with @QuarkusTest and the coverage report are covered by the quarkus-jacoco dependency
+    jacoco {
+        excludeClassLoaders = ["*QuarkusClassLoader"]
+        destinationFile = layout.buildDirectory.file("jacoco-quarkus.exec").get().asFile
+    }
+
+    finalizedBy jacocoTestReport
+}
+
+compileJava {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-parameters'
+    // Force annotation processing
+    options.compilerArgs << '-XprintProcessorInfo'
+    options.fork = true
+    options.forkOptions.jvmArgs = ['-Xmx1024m']
+}
+
+compileTestJava {
+    options.encoding = 'UTF-8'
+}
+
+spotless {
+    java {
+        removeUnusedImports()
+        cleanthat()  // Cleanthat will refactor your code, but it may break your style: apply it before your formatter
+        googleJavaFormat('1.25.2').aosp().reorderImports(true) // reorder imports matches google-java-format plugin
+    }
+}
+
+jacocoTestReport {
+    executionData.setFrom("$project.buildDir/jacoco-quarkus.exec")
+    reports {
+        xml.required = true
+        html.required = true
+        csv.required = true
+    }
+}
+
+jacocoTestCoverageVerification {
+    executionData.setFrom("$project.buildDir/jacoco-quarkus.exec")
+    dependsOn jacocoTestReport
+    violationRules {
+        rule {
+            limit {
+                counter = 'INSTRUCTION'
+                value = 'COVEREDRATIO'
+                minimum = 0.10
+            }
+            limit {
+                counter = 'BRANCH'
+                value = 'COVEREDRATIO'
+                minimum = 0.10
+            }
+        }
+    }
+}
+check.dependsOn jacocoTestCoverageVerification
+
+
+// Build integ subproject as part of main build (optional, requires AWS auth for codeartifact)
+// build.dependsOn ':integ:build'
+
+// Copy integ.jar to root build directory alongside other JARs
+// tasks.register('copyIntegJar', Copy) {
+//     dependsOn ':integ:jar'
+//     from 'integ/build/libs/integ.jar'
+//     into 'build'
+// }
+// build.finalizedBy copyIntegJar
+

@@ -1,0 +1,168 @@
+package com.fullbay.unit.resource;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.CoreMatchers.*;
+import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+import com.fullbay.unit.exception.DuplicateVinException;
+import com.fullbay.unit.exception.UnitNotFoundException;
+import com.fullbay.unit.model.dto.UnitDto;
+import com.fullbay.unit.model.entity.UnitEntity;
+import com.fullbay.unit.service.UnitService;
+import io.quarkus.test.InjectMock;
+import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
+import java.time.Instant;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+@QuarkusTest
+class UnitResourceTest {
+
+    @InjectMock
+    UnitService unitService;
+
+    @BeforeEach
+    void setUp() {
+        reset(unitService);
+    }
+
+    @Test
+    void shouldGetEmptyListByDefault() {
+        when(unitService.getUnitsByCustomerId(any())).thenReturn(java.util.Collections.emptyList());
+
+        given().when()
+                .get("/v1/units")
+                .then()
+                .statusCode(200)
+                .body("data.items", hasSize(0));
+    }
+
+    @Test
+    void shouldReturnValidResponseStructure() {
+        when(unitService.getUnitsByCustomerId(any())).thenReturn(java.util.Collections.emptyList());
+
+        given().when()
+                .get("/v1/units")
+                .then()
+                .statusCode(200)
+                .body("data", notNullValue())
+                .body("error", nullValue());
+    }
+
+    @Test
+    void shouldValidateCreateRequest() {
+        given().contentType(ContentType.JSON)
+                .body("{\"customerId\": \"cst-123\"}")
+                .when()
+                .post("/v1/units")
+                .then()
+                .statusCode(400)
+                .body("error", notNullValue())
+                .body("error.code", equalTo("VALIDATION_ERROR"));
+    }
+
+    @Test
+    void shouldRequireNotNullFields() {
+        given().contentType(ContentType.JSON)
+                .body("{}")
+                .when()
+                .post("/v1/units")
+                .then()
+                .statusCode(400);
+    }
+
+    @Test
+    void shouldCreateValidUnit() {
+        UnitDto created = UnitDto.builder()
+                .unitId("unt-abc123")
+                .customerId("cst-123")
+                .vin("1HGCM82633A004352")
+                .year(2020)
+                .make("Honda")
+                .model("Accord")
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .build();
+        when(unitService.createUnit(any())).thenReturn(created);
+
+        String body = """
+                {
+                  "customerId": "cst-123",
+                  "vin": "1HGCM82633A004352",
+                  "year": 2020,
+                  "make": "Honda",
+                  "model": "Accord"
+                }
+                """;
+
+        given().contentType(ContentType.JSON)
+                .body(body)
+                .when()
+                .post("/v1/units")
+                .then()
+                .statusCode(201)
+                .body("data", notNullValue())
+                .body("data.unitId", equalTo("unt-abc123"))
+                .body("data.customerId", equalTo("cst-123"))
+                .body("data.vin", equalTo("1HGCM82633A004352"));
+    }
+
+    @Test
+    void shouldReturnNotFoundForMissingUnit() {
+        when(unitService.getUnitById(any())).thenThrow(
+                new UnitNotFoundException("unt-invalid"));
+
+        given().when()
+                .get("/v1/units/unt-invalid")
+                .then()
+                .statusCode(404)
+                .body("error", notNullValue())
+                .body("error.code", equalTo("UNIT_NOT_FOUND"));
+    }
+
+    @Test
+    void shouldPreventDuplicateVin() {
+        when(unitService.createUnit(any()))
+                .thenReturn(UnitDto.builder()
+                        .unitId("unt-first")
+                        .customerId("cst-123")
+                        .vin("1HGCM82633A004352")
+                        .year(2020)
+                        .make("Honda")
+                        .model("Accord")
+                        .createdAt(Instant.now())
+                        .updatedAt(Instant.now())
+                        .build())
+                .thenThrow(new DuplicateVinException("1HGCM82633A004352"));
+
+        String createBody = """
+                {
+                  "customerId": "cst-123",
+                  "vin": "1HGCM82633A004352",
+                  "year": 2020,
+                  "make": "Honda",
+                  "model": "Accord"
+                }
+                """;
+
+        // First creation should succeed
+        given().contentType(ContentType.JSON)
+                .body(createBody)
+                .when()
+                .post("/v1/units")
+                .then()
+                .statusCode(201);
+
+        // Second with same VIN should fail
+        given().contentType(ContentType.JSON)
+                .body(createBody)
+                .when()
+                .post("/v1/units")
+                .then()
+                .statusCode(409)
+                .body("error.code", equalTo("DUPLICATE_VIN"));
+    }
+}

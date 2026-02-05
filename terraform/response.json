@@ -1,0 +1,1 @@
+{"statusCode":500,"multiValueHeaders":{"content-length":["113"],"Content-Type":["application/json"]},"body":"{\"data\":null,\"error\":{\"code\":\"INTERNAL_SERVER_ERROR\",\"message\":\"HTTP 415 Unsupported Media Type\",\"details\":null}}","isBase64Encoded":false}
