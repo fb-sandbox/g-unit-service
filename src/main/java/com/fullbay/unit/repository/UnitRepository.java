@@ -47,8 +47,14 @@ public class UnitRepository {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-save")) {
             segment.putAnnotation("unitId", entity.unitId());
 
-            // Serialize entire Unit to DynamoDB MAP
-            final Map<String, AttributeValue> unitMap = jacksonConverter.objectToMap(entity);
+            // Serialize entire Unit to DynamoDB MAP, filtering out NULL values
+            final Map<String, AttributeValue> unitMap =
+                    jacksonConverter.objectToMap(entity).entrySet().stream()
+                            .filter(e -> e.getValue().nul() == null || !e.getValue().nul())
+                            .collect(
+                                    java.util.stream.Collectors.toMap(
+                                            java.util.Map.Entry::getKey,
+                                            java.util.Map.Entry::getValue));
 
             // Store only key fields as separate attributes + entire Unit as MAP in data field
             final Map<String, AttributeValue> item =
