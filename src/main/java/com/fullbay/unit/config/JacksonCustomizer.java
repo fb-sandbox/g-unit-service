@@ -32,7 +32,7 @@ public class JacksonCustomizer implements ObjectMapperCustomizer {
                 .setVisibility(PropertyAccessor.ALL, JsonAutoDetect.Visibility.NONE)
                 .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
                 .setVisibility(PropertyAccessor.CREATOR, JsonAutoDetect.Visibility.ANY)
-                .setSerializationInclusion(JsonInclude.Include.ALWAYS)
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL)
                 .configure(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS, false);
     }
 }
