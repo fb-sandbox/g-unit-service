@@ -27,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -67,7 +68,14 @@ public class UnitResource {
                                         schema = @Schema(implementation = ApiResponse.class)))
             })
     public ApiResponse<Map<String, Object>> listUnits(
-            @QueryParam("customerId") String customerId, @QueryParam("vin") String vin) {
+            @QueryParam("customerId")
+                    @Parameter(
+                            name = "customerId",
+                            description = "Filter units by customer ID (optional)")
+                    String customerId,
+            @QueryParam("vin")
+                    @Parameter(name = "vin", description = "Filter units by VIN (optional)")
+                    String vin) {
         log.info("List units request - customerId: {}, vin: {}", customerId, vin);
 
         if (customerId != null && !customerId.isEmpty()) {
@@ -141,7 +149,10 @@ public class UnitResource {
                                         schema = @Schema(implementation = ApiResponse.class))),
                 @APIResponse(responseCode = "404", description = "Unit not found")
             })
-    public ApiResponse<Unit> getUnitByVin(@PathParam("vin") String vin) {
+    public ApiResponse<Unit> getUnitByVin(
+            @PathParam("vin")
+                    @Parameter(name = "vin", description = "Vehicle Identification Number")
+                    String vin) {
         log.info("Get unit by VIN request - vin: {}", vin);
         final Unit unit = unitService.getUnitByVin(vin);
         return ApiResponse.<Unit>builder().data(unit).build();
