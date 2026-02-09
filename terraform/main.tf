@@ -17,16 +17,17 @@ locals {
 resource "aws_dynamodb_table" "units" {
   name           = local.stack_id
   billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "unitId"
+  hash_key       = "PK"
+  range_key      = "SK"
   stream_enabled = false
 
   attribute {
-    name = "unitId"
+    name = "PK"
     type = "S"
   }
 
   attribute {
-    name = "vin"
+    name = "SK"
     type = "S"
   }
 
@@ -36,23 +37,24 @@ resource "aws_dynamodb_table" "units" {
   }
 
   attribute {
-    name = "createdAt"
+    name = "vin"
     type = "S"
   }
 
-  # GSI for VIN lookups
+  # GSI for Customer ID + VIN lookups
   global_secondary_index {
-    name            = "vin-index"
-    hash_key        = "vin"
-    projection_type = "ALL"
+    name            = "GSI1-CustomerVin"
+    hash_key        = "customerId"
+    range_key       = "vin"
+    projection_type = "KEYS_ONLY"
   }
 
-  # GSI for Customer ID lookups with createdAt sort
+  # GSI for VIN-only lookups (across all customers)
   global_secondary_index {
-    name            = "customerId-index"
-    hash_key        = "customerId"
-    range_key       = "createdAt"
-    projection_type = "ALL"
+    name            = "GSI2-Vin"
+    hash_key        = "vin"
+    range_key       = "PK"
+    projection_type = "KEYS_ONLY"
   }
 
   tags = local.common_tags

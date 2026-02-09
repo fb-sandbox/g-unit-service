@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 import software.amazon.awssdk.services.dynamodb.model.QueryResponse;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,6 +48,9 @@ public class UnitRepository {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-save")) {
             segment.putAnnotation("unitId", entity.unitId());
 
+            final String pk = "UNT#" + entity.unitId();
+            final String sk = "UNT#" + entity.unitId();
+
             // Serialize entire Unit to DynamoDB MAP, filtering out NULL values
             final Map<String, AttributeValue> unitMap =
                     jacksonConverter.objectToMap(entity).entrySet().stream()
@@ -56,27 +60,23 @@ public class UnitRepository {
                                             java.util.Map.Entry::getKey,
                                             java.util.Map.Entry::getValue));
 
-            // Store only key fields as separate attributes + entire Unit as MAP in data field
-            final Map<String, AttributeValue> item =
-                    Map.of(
-                            "unitId", AttributeValue.builder().s(entity.unitId()).build(),
-                            "customerId", AttributeValue.builder().s(entity.customerId()).build(),
-                            "vin", AttributeValue.builder().s(entity.vin()).build(),
-                            "createdAt",
-                                    AttributeValue.builder()
-                                            .s(
-                                                    entity.createdAt() != null
-                                                            ? entity.createdAt().toString()
-                                                            : "")
-                                            .build(),
-                            "updatedAt",
-                                    AttributeValue.builder()
-                                            .s(
-                                                    entity.updatedAt() != null
-                                                            ? entity.updatedAt().toString()
-                                                            : "")
-                                            .build(),
-                            "data", AttributeValue.builder().m(unitMap).build());
+            // Store PK/SK + key fields as separate attributes + entire Unit as MAP in data field
+            final Map<String, AttributeValue> item = new HashMap<>();
+            item.put("PK", AttributeValue.builder().s(pk).build());
+            item.put("SK", AttributeValue.builder().s(sk).build());
+            item.put("customerId", AttributeValue.builder().s(entity.customerId()).build());
+            item.put("vin", AttributeValue.builder().s(entity.vin()).build());
+            item.put(
+                    "createdAt",
+                    AttributeValue.builder()
+                            .s(entity.createdAt() != null ? entity.createdAt().toString() : "")
+                            .build());
+            item.put(
+                    "updatedAt",
+                    AttributeValue.builder()
+                            .s(entity.updatedAt() != null ? entity.updatedAt().toString() : "")
+                            .build());
+            item.put("data", AttributeValue.builder().m(unitMap).build());
 
             dynamoDbClient.putItem(req -> req.tableName(tableName).item(item));
             log.debug("Saved unit: {}", entity.unitId());
@@ -94,14 +94,19 @@ public class UnitRepository {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-findById")) {
             segment.putAnnotation("unitId", unitId);
 
+            final String pk = "UNT#" + unitId;
+            final String sk = "UNT#" + unitId;
+
             final GetItemResponse response =
                     dynamoDbClient.getItem(
                             GetItemRequest.builder()
                                     .tableName(tableName)
                                     .key(
                                             Map.of(
-                                                    "unitId",
-                                                    AttributeValue.builder().s(unitId).build()))
+                                                    "PK",
+                                                    AttributeValue.builder().s(pk).build(),
+                                                    "SK",
+                                                    AttributeValue.builder().s(sk).build()))
                                     .build());
 
             if (!response.hasItem()) {
@@ -118,37 +123,36 @@ public class UnitRepository {
     }
 
     /**
-     * Find units by VIN using GSI.
+     * Find units by Customer ID and VIN using GSI.
      *
+     * @param customerId The customer ID
      * @param vin The VIN to search for
      * @return List of matching units
      */
     @SneakyThrows
-    public List<Unit> findByVin(String vin) {
-        try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-findByVin")) {
+    public List<Unit> findByCustomerIdAndVin(String customerId, String vin) {
+        try (Subsegment segment =
+                AWSXRay.beginSubsegment("unit-repository-findByCustomerIdAndVin")) {
+            segment.putAnnotation("customerId", customerId);
             segment.putAnnotation("vin", vin);
 
             final QueryResponse response =
                     dynamoDbClient.query(
                             QueryRequest.builder()
                                     .tableName(tableName)
-                                    .indexName("vin-index")
-                                    .keyConditionExpression("vin = :vin")
+                                    .indexName("GSI1-CustomerVin")
+                                    .keyConditionExpression(
+                                            "customerId = :customerId AND vin = :vin")
                                     .expressionAttributeValues(
-                                            Map.of(":vin", AttributeValue.builder().s(vin).build()))
+                                            Map.of(
+                                                    ":customerId",
+                                                    AttributeValue.builder().s(customerId).build(),
+                                                    ":vin",
+                                                    AttributeValue.builder().s(vin).build()))
                                     .build());
 
-            final List<Unit> units =
-                    response.items().stream()
-                            .map(item -> item.get("unitId"))
-                            .filter(attr -> attr != null)
-                            .map(AttributeValue::s)
-                            .map(this::findById)
-                            .filter(Optional::isPresent)
-                            .map(Optional::get)
-                            .toList();
-
-            log.debug("Found {} units by VIN: {}", units.size(), vin);
+            final List<Unit> units = findByPkSk(response);
+            log.debug("Found {} units for customer: {} vin: {}", units.size(), customerId, vin);
             return units;
         }
     }
@@ -168,7 +172,7 @@ public class UnitRepository {
                     dynamoDbClient.query(
                             QueryRequest.builder()
                                     .tableName(tableName)
-                                    .indexName("customerId-index")
+                                    .indexName("GSI1-CustomerVin")
                                     .keyConditionExpression("customerId = :customerId")
                                     .expressionAttributeValues(
                                             Map.of(
@@ -176,24 +180,48 @@ public class UnitRepository {
                                                     AttributeValue.builder().s(customerId).build()))
                                     .build());
 
-            final List<Unit> units =
-                    response.items().stream()
-                            .map(item -> item.get("unitId"))
-                            .filter(attr -> attr != null)
-                            .map(AttributeValue::s)
-                            .map(this::findById)
-                            .filter(Optional::isPresent)
-                            .map(Optional::get)
-                            .toList();
-
+            final List<Unit> units = findByPkSk(response);
             log.debug("Found {} units for customer: {}", units.size(), customerId);
             return units;
         }
     }
 
+    /**
+     * Find units by VIN using GSI2-Vin (across all customers).
+     *
+     * @param vin The VIN to search for
+     * @return List of matching units
+     */
     @SneakyThrows
-    private Unit deserializeUnit(java.util.Map<String, AttributeValue> item) {
-        return jacksonConverter.mapToObject(item, Unit.class);
+    public List<Unit> findByVin(String vin) {
+        try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-findByVin")) {
+            segment.putAnnotation("vin", vin);
+
+            final QueryResponse response =
+                    dynamoDbClient.query(
+                            QueryRequest.builder()
+                                    .tableName(tableName)
+                                    .indexName("GSI2-Vin")
+                                    .keyConditionExpression("vin = :vin")
+                                    .expressionAttributeValues(
+                                            Map.of(":vin", AttributeValue.builder().s(vin).build()))
+                                    .build());
+
+            final List<Unit> units = findByPkSk(response);
+            log.debug("Found {} units for vin: {}", units.size(), vin);
+            return units;
+        }
+    }
+
+    private List<Unit> findByPkSk(QueryResponse response) {
+        return response.items().stream()
+                .map(item -> item.get("PK"))
+                .filter(attr -> attr != null)
+                .map(attr -> attr.s().replace("UNT#", ""))
+                .map(this::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .toList();
     }
 
     /**
@@ -205,10 +233,18 @@ public class UnitRepository {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-repository-delete")) {
             segment.putAnnotation("unitId", unitId);
 
+            final String pk = "UNT#" + unitId;
+            final String sk = "UNT#" + unitId;
+
             dynamoDbClient.deleteItem(
                     DeleteItemRequest.builder()
                             .tableName(tableName)
-                            .key(Map.of("unitId", AttributeValue.builder().s(unitId).build()))
+                            .key(
+                                    Map.of(
+                                            "PK",
+                                            AttributeValue.builder().s(pk).build(),
+                                            "SK",
+                                            AttributeValue.builder().s(sk).build()))
                             .build());
 
             log.debug("Deleted unit: {}", unitId);

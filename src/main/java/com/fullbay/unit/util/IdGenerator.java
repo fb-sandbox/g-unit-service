@@ -8,12 +8,12 @@ public class IdGenerator {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String CHARSET = "abcdefghijklmnopqrstuvwxyz0123456789";
     private static final int ID_LENGTH = 7;
-    private static final String PREFIX = "unt-";
+    private static final String PREFIX = "unt_";
 
     /**
      * Generate a unique Unit ID.
      *
-     * @return Unit ID in format "unt-{7 random alphanumeric lowercase}"
+     * @return Unit ID in format "unt_{7 random alphanumeric lowercase}"
      */
     public static String generateUnitId() {
         final StringBuilder sb = new StringBuilder(PREFIX);

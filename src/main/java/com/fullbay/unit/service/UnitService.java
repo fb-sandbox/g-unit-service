@@ -7,7 +7,6 @@ import com.fullbay.unit.exception.UnitNotFoundException;
 import com.fullbay.unit.integration.nhtsa.NHTSAClient;
 import com.fullbay.unit.integration.nhtsa.NHTSAMapper;
 import com.fullbay.unit.integration.nhtsa.NHTSAVinDecodeResponse;
-import com.fullbay.unit.model.dto.CreateUnitRequest;
 import com.fullbay.unit.model.dto.UpdateUnitRequest;
 import com.fullbay.unit.model.entity.Unit;
 import com.fullbay.unit.repository.UnitRepository;
@@ -42,208 +41,6 @@ public class UnitService {
     }
 
     /**
-     * Create a new Unit.
-     *
-     * @param request The create request
-     * @return The created unit DTO
-     * @throws DuplicateVinException if VIN already exists
-     */
-    public Unit createUnit(CreateUnitRequest request) {
-        try (Subsegment segment = AWSXRay.beginSubsegment("unit-service-createUnit")) {
-            segment.putAnnotation("customerId", request.getCustomerId());
-            segment.putAnnotation("vin", request.getVin());
-
-            // Check for duplicate VIN
-            final List<Unit> existing = unitRepository.findByVin(request.getVin());
-            if (!existing.isEmpty()) {
-                log.warn("Duplicate VIN detected: {}", request.getVin());
-                throw new DuplicateVinException(request.getVin());
-            }
-
-            // Generate ID and create entity
-            final String unitId = IdGenerator.generateUnitId();
-            segment.putAnnotation("unitId", unitId);
-            log.debug("Generated unit ID: {}", unitId);
-
-            final java.time.Instant now = java.time.Instant.now();
-            final Unit entity =
-                    Unit.builder()
-                            .unitId(unitId)
-                            .customerId(request.getCustomerId())
-                            .vin(request.getVin())
-                            .year(request.getYear())
-                            .make(request.getMake())
-                            .makeId(request.getMakeId())
-                            .manufacturer(request.getManufacturer())
-                            .manufacturerId(request.getManufacturerId())
-                            .model(request.getModel())
-                            .modelId(request.getModelId())
-                            .series(request.getSeries())
-                            .trim(request.getTrim())
-                            .trim2(request.getTrim2())
-                            .submodel(request.getSubmodel())
-                            .unitType(request.getUnitType())
-                            .vehicleType(request.getVehicleType())
-                            .bodyClass(request.getBodyClass())
-                            .bodyType(request.getBodyType())
-                            .bodyCabType(request.getBodyCabType())
-                            .bedType(request.getBedType())
-                            .busType(request.getBusType())
-                            .busLength(request.getBusLength())
-                            .busFloorConfigType(request.getBusFloorConfigType())
-                            .motorcycleChassisType(request.getMotorcycleChassisType())
-                            .motorcycleSuspensionType(request.getMotorcycleSuspensionType())
-                            .trailerBodyType(request.getTrailerBodyType())
-                            .trailerLength(request.getTrailerLength())
-                            .trailerType(request.getTrailerType())
-                            .customMotorcycleType(request.getCustomMotorcycleType())
-                            .nonLandUse(request.getNonLandUse())
-                            .otherBusInfo(request.getOtherBusInfo())
-                            .otherMotorcycleInfo(request.getOtherMotorcycleInfo())
-                            .otherTrailerInfo(request.getOtherTrailerInfo())
-                            .fuelType(request.getFuelType())
-                            .fuelTypeSecondary(request.getFuelTypeSecondary())
-                            .engineType(request.getEngineType())
-                            .engineManufacturer(request.getEngineManufacturer())
-                            .engineModel(request.getEngineModel())
-                            .engineCylinders(request.getEngineCylinders())
-                            .engineHP(request.getEngineHP())
-                            .engineHPMax(request.getEngineHPMax())
-                            .engineKW(request.getEngineKW())
-                            .displacementLiters(request.getDisplacementLiters())
-                            .displacementCC(request.getDisplacementCC())
-                            .displacementCI(request.getDisplacementCI())
-                            .engineConfiguration(request.getEngineConfiguration())
-                            .engineCycles(request.getEngineCycles())
-                            .valveTrainDesign(request.getValveTrainDesign())
-                            .fuelInjectionType(request.getFuelInjectionType())
-                            .otherEngineInfo(request.getOtherEngineInfo())
-                            .turbo(request.getTurbo())
-                            .coolingType(request.getCoolingType())
-                            .topSpeedMPH(request.getTopSpeedMPH())
-                            .transmissionType(request.getTransmissionType())
-                            .transmissionStyle(request.getTransmissionStyle())
-                            .transmissionSpeeds(request.getTransmissionSpeeds())
-                            .driveType(request.getDriveType())
-                            .brakeSystemType(request.getBrakeSystemType())
-                            .brakeSystemDesc(request.getBrakeSystemDesc())
-                            .combinedBrakingSystem(request.getCombinedBrakingSystem())
-                            .dynamicBrakeSupport(request.getDynamicBrakeSupport())
-                            .axles(request.getAxles())
-                            .axleConfiguration(request.getAxleConfiguration())
-                            .doors(request.getDoors())
-                            .windows(request.getWindows())
-                            .seats(request.getSeats())
-                            .seatRows(request.getSeatRows())
-                            .curbWeightLB(request.getCurbWeightLB())
-                            .gvwr(request.getGvwr())
-                            .gvwrTo(request.getGvwrTo())
-                            .gcwr(request.getGcwr())
-                            .gcwrTo(request.getGcwrTo())
-                            .bedLengthIN(request.getBedLengthIN())
-                            .wheelbaseIN(request.getWheelbaseIN())
-                            .wheelbaseShort(request.getWheelbaseShort())
-                            .wheelbaseLong(request.getWheelbaseLong())
-                            .wheelbaseType(request.getWheelbaseType())
-                            .trackWidth(request.getTrackWidth())
-                            .wheelSizeFront(request.getWheelSizeFront())
-                            .wheelSizeRear(request.getWheelSizeRear())
-                            .abs(request.getAbs())
-                            .esc(request.getEsc())
-                            .tractionControl(request.getTractionControl())
-                            .forwardCollisionWarning(request.getForwardCollisionWarning())
-                            .blindSpotMon(request.getBlindSpotMon())
-                            .blindSpotIntervention(request.getBlindSpotIntervention())
-                            .laneDepartureWarning(request.getLaneDepartureWarning())
-                            .laneKeepSystem(request.getLaneKeepSystem())
-                            .laneCenteringAssistance(request.getLaneCenteringAssistance())
-                            .parkAssist(request.getParkAssist())
-                            .rearCrossTrafficAlert(request.getRearCrossTrafficAlert())
-                            .rearAutomaticEmergencyBraking(
-                                    request.getRearAutomaticEmergencyBraking())
-                            .rearVisibilitySystem(request.getRearVisibilitySystem())
-                            .pedestrianAutomaticEmergencyBraking(
-                                    request.getPedestrianAutomaticEmergencyBraking())
-                            .seatBelts(request.getSeatBelts())
-                            .seatBeltsAll(request.getSeatBeltsAll())
-                            .pretensioner(request.getPretensioner())
-                            .airBagsFront(request.getAirBagsFront())
-                            .airBagsKnee(request.getAirBagsKnee())
-                            .airBagsSide(request.getAirBagsSide())
-                            .airBagsCurtain(request.getAirBagsCurtain())
-                            .airBagsSeatCushion(request.getAirBagsSeatCushion())
-                            .airbagLocFront(request.getAirbagLocFront())
-                            .airbagLocKnee(request.getAirbagLocKnee())
-                            .airbagLocSide(request.getAirbagLocSide())
-                            .airbagLocCurtain(request.getAirbagLocCurtain())
-                            .airbagLocSeatCushion(request.getAirbagLocSeatCushion())
-                            .activeSafetyNote(request.getActiveSafetyNote())
-                            .activeSafetySysNote(request.getActiveSafetySysNote())
-                            .otherRestraintSystemInfo(request.getOtherRestraintSystemInfo())
-                            .cib(request.getCib())
-                            .edr(request.getEdr())
-                            .batteryType(request.getBatteryType())
-                            .batteryInfo(request.getBatteryInfo())
-                            .evDriveUnit(request.getEvDriveUnit())
-                            .electrificationLevel(request.getElectrificationLevel())
-                            .batteryKWh(request.getBatteryKWh())
-                            .batteryKWhTo(request.getBatteryKWhTo())
-                            .batteryV(request.getBatteryV())
-                            .batteryVTo(request.getBatteryVTo())
-                            .batteryA(request.getBatteryA())
-                            .batteryATo(request.getBatteryATo())
-                            .batteryCells(request.getBatteryCells())
-                            .batteryModules(request.getBatteryModules())
-                            .batteryPacks(request.getBatteryPacks())
-                            .chargerLevel(request.getChargerLevel())
-                            .chargerPowerKW(request.getChargerPowerKW())
-                            .adaptiveCruiseControl(request.getAdaptiveCruiseControl())
-                            .adaptiveDrivingBeam(request.getAdaptiveDrivingBeam())
-                            .adaptiveHeadlights(request.getAdaptiveHeadlights())
-                            .keylessIgnition(request.getKeylessIgnition())
-                            .wheelieMitigation(request.getWheelieMitigation())
-                            .automaticPedestrianAlertingSound(
-                                    request.getAutomaticPedestrianAlertingSound())
-                            .autoReverseSystem(request.getAutoReverseSystem())
-                            .cibStatus(request.getCibStatus())
-                            .daytimeRunningLight(request.getDaytimeRunningLight())
-                            .lowerBeamHeadlampLightSource(request.getLowerBeamHeadlampLightSource())
-                            .semiautomaticHeadlampBeamSwitching(
-                                    request.getSemiautomaticHeadlampBeamSwitching())
-                            .plantCity(request.getPlantCity())
-                            .plantState(request.getPlantState())
-                            .plantCountry(request.getPlantCountry())
-                            .destinationMarket(request.getDestinationMarket())
-                            .saeAutomationLevel(request.getSaeAutomationLevel())
-                            .saeAutomationLevelTo(request.getSaeAutomationLevelTo())
-                            .crac(request.getCrac())
-                            .steeringLocation(request.getSteeringLocation())
-                            .basePrice(request.getBasePrice())
-                            .cashForClunkers(request.getCashForClunkers())
-                            .ncsbBodyType(request.getNcsbBodyType())
-                            .ncsaMake(request.getNcsaMake())
-                            .ncsaModel(request.getNcsaModel())
-                            .ncsbMappingException(request.getNcsbMappingException())
-                            .ncsbMapExcApprovedBy(request.getNcsbMapExcApprovedBy())
-                            .ncsbMapExcApprovedOn(request.getNcsbMapExcApprovedOn())
-                            .ncsbNote(request.getNcsbNote())
-                            .vehicleDescriptor(request.getVehicleDescriptor())
-                            .suggestedVin(request.getSuggestedVin())
-                            .possibleValues(request.getPossibleValues())
-                            .note(request.getNote())
-                            .attributes(request.getAttributes())
-                            .createdAt(now)
-                            .updatedAt(now)
-                            .build();
-
-            unitRepository.save(entity);
-            log.info("Created unit: {}", unitId);
-
-            return entity;
-        }
-    }
-
-    /**
      * Create a new Unit from VIN by calling NHTSA API.
      *
      * @param vin The VIN to decode
@@ -256,10 +53,10 @@ public class UnitService {
             segment.putAnnotation("customerId", customerId);
             segment.putAnnotation("vin", vin);
 
-            // Check for duplicate VIN
-            final List<Unit> existing = unitRepository.findByVin(vin);
+            // Check for duplicate VIN within customer
+            final List<Unit> existing = unitRepository.findByCustomerIdAndVin(customerId, vin);
             if (!existing.isEmpty()) {
-                log.warn("Duplicate VIN detected: {}", vin);
+                log.warn("Duplicate VIN detected for customer {}: {}", customerId, vin);
                 throw new DuplicateVinException(vin);
             }
 
@@ -312,23 +109,37 @@ public class UnitService {
     }
 
     /**
-     * Get a Unit by VIN.
+     * Get Units by Customer ID and VIN.
      *
+     * @param customerId The customer ID
      * @param vin The VIN
-     * @return The unit DTO or null if not found
+     * @return List of matching units
      */
-    public Unit getUnitByVin(String vin) {
-        try (Subsegment segment = AWSXRay.beginSubsegment("unit-service-getUnitByVin")) {
+    public List<Unit> getUnitByCustomerIdAndVin(String customerId, String vin) {
+        try (Subsegment segment =
+                AWSXRay.beginSubsegment("unit-service-getUnitByCustomerIdAndVin")) {
+            segment.putAnnotation("customerId", customerId);
+            segment.putAnnotation("vin", vin);
+
+            final List<Unit> entities = unitRepository.findByCustomerIdAndVin(customerId, vin);
+            log.debug("Found {} units for customer: {} vin: {}", entities.size(), customerId, vin);
+            return entities;
+        }
+    }
+
+    /**
+     * Get Units by VIN (across all customers).
+     *
+     * @param vin The VIN to search for
+     * @return List of matching units
+     */
+    public List<Unit> getUnitsByVin(String vin) {
+        try (Subsegment segment = AWSXRay.beginSubsegment("unit-service-getUnitsByVin")) {
             segment.putAnnotation("vin", vin);
 
             final List<Unit> entities = unitRepository.findByVin(vin);
-            if (entities.isEmpty()) {
-                log.debug("No unit found for VIN: {}", vin);
-                return null;
-            }
-
-            log.debug("Retrieved unit by VIN: {}", vin);
-            return entities.get(0);
+            log.debug("Found {} units for vin: {}", entities.size(), vin);
+            return entities;
         }
     }
 
@@ -369,11 +180,19 @@ public class UnitService {
                                         return new UnitNotFoundException(unitId);
                                     });
 
-            // If VIN is being updated, check for duplicates
+            // If VIN is being updated, check for duplicates within customer
             if (request.getVin() != null && !request.getVin().equals(entity.vin())) {
-                final List<Unit> existing = unitRepository.findByVin(request.getVin());
+                final String targetCustomerId =
+                        request.getCustomerId() != null
+                                ? request.getCustomerId()
+                                : entity.customerId();
+                final List<Unit> existing =
+                        unitRepository.findByCustomerIdAndVin(targetCustomerId, request.getVin());
                 if (!existing.isEmpty()) {
-                    log.warn("Duplicate VIN detected during update: {}", request.getVin());
+                    log.warn(
+                            "Duplicate VIN detected during update for customer {}: {}",
+                            targetCustomerId,
+                            request.getVin());
                     throw new DuplicateVinException(request.getVin());
                 }
             }

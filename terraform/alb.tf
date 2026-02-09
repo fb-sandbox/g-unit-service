@@ -4,6 +4,22 @@ resource "aws_lb_target_group" "unit_service" {
   target_type = "lambda"
 
   tags = local.common_tags
+
+  lifecycle {
+    ignore_changes = [lambda_multi_value_headers_enabled]
+  }
+}
+
+# Enable multi-value headers for CORS support via AWS CLI
+# This is required for headers (like Origin) to pass through ALB to Lambda
+resource "null_resource" "unit_service_multi_value_headers" {
+  provisioner "local-exec" {
+    command = "aws elbv2 modify-target-group-attributes --target-group-arn ${aws_lb_target_group.unit_service.arn} --attributes Key=lambda.multi_value_headers.enabled,Value=true --region us-west-2"
+  }
+
+  triggers = {
+    target_group_arn = aws_lb_target_group.unit_service.arn
+  }
 }
 
 # Allow ALB to invoke Lambda

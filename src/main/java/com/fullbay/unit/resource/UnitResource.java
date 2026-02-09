@@ -1,7 +1,6 @@
 package com.fullbay.unit.resource;
 
 import com.fullbay.unit.model.dto.CreateUnitFromVinRequest;
-import com.fullbay.unit.model.dto.CreateUnitRequest;
 import com.fullbay.unit.model.dto.UpdateUnitRequest;
 import com.fullbay.unit.model.entity.Unit;
 import com.fullbay.unit.model.response.ApiResponse;
@@ -78,6 +77,13 @@ public class UnitResource {
                     String vin) {
         log.info("List units request - customerId: {}, vin: {}", customerId, vin);
 
+        if (customerId != null && !customerId.isEmpty() && vin != null && !vin.isEmpty()) {
+            final List<Unit> units = unitService.getUnitByCustomerIdAndVin(customerId, vin);
+            return ApiResponse.<Map<String, Object>>builder()
+                    .data(Map.of("items", units, "count", units.size()))
+                    .build();
+        }
+
         if (customerId != null && !customerId.isEmpty()) {
             final List<Unit> units = unitService.getUnitsByCustomerId(customerId);
             return ApiResponse.<Map<String, Object>>builder()
@@ -86,16 +92,12 @@ public class UnitResource {
         }
 
         if (vin != null && !vin.isEmpty()) {
-            final Unit unit = unitService.getUnitByVin(vin);
-            if (unit != null) {
-                return ApiResponse.<Map<String, Object>>builder()
-                        .data(Map.of("item", unit))
-                        .build();
-            }
-            return ApiResponse.<Map<String, Object>>builder().data(Map.of("item", null)).build();
+            final List<Unit> units = unitService.getUnitsByVin(vin);
+            return ApiResponse.<Map<String, Object>>builder()
+                    .data(Map.of("items", units, "count", units.size()))
+                    .build();
         }
 
-        // Default: empty list
         return ApiResponse.<Map<String, Object>>builder()
                 .data(Map.of("items", List.of(), "count", 0))
                 .build();
@@ -126,73 +128,6 @@ public class UnitResource {
         log.info("Get unit request - unitId: {}", unitId);
         final Unit unit = unitService.getUnitById(unitId);
         return ApiResponse.<Unit>builder().data(unit).build();
-    }
-
-    /**
-     * Get a unit by VIN.
-     *
-     * @param vin The VIN to search for
-     * @return API response with unit
-     */
-    @GET
-    @Path("/vin/{vin}")
-    @Produces(MediaType.APPLICATION_JSON)
-    @Operation(summary = "Get unit by VIN", description = "Retrieve a unit by its VIN")
-    @APIResponses(
-            value = {
-                @APIResponse(
-                        responseCode = "200",
-                        description = "Unit retrieved successfully",
-                        content =
-                                @Content(
-                                        mediaType = MediaType.APPLICATION_JSON,
-                                        schema = @Schema(implementation = ApiResponse.class))),
-                @APIResponse(responseCode = "404", description = "Unit not found")
-            })
-    public ApiResponse<Unit> getUnitByVin(
-            @PathParam("vin")
-                    @Parameter(name = "vin", description = "Vehicle Identification Number")
-                    String vin) {
-        log.info("Get unit by VIN request - vin: {}", vin);
-        final Unit unit = unitService.getUnitByVin(vin);
-        return ApiResponse.<Unit>builder().data(unit).build();
-    }
-
-    /**
-     * Create a new unit.
-     *
-     * @param request The create request
-     * @return API response with created unit
-     */
-    @POST
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    @Operation(summary = "Create unit", description = "Create a new unit")
-    @APIResponses(
-            value = {
-                @APIResponse(
-                        responseCode = "201",
-                        description = "Unit created successfully",
-                        content =
-                                @Content(
-                                        mediaType = MediaType.APPLICATION_JSON,
-                                        schema = @Schema(implementation = ApiResponse.class))),
-                @APIResponse(responseCode = "400", description = "Invalid request"),
-                @APIResponse(
-                        responseCode = "409",
-                        description = "Unit with this VIN already exists")
-            })
-    public Response createUnit(@Valid CreateUnitRequest request) {
-        log.info(
-                "Create unit request - customerId: {}, vin: {}",
-                request.getCustomerId(),
-                request.getVin());
-        final Unit unit = unitService.createUnit(request);
-        final ApiResponse<Unit> response = ApiResponse.<Unit>builder().data(unit).build();
-        return Response.status(Response.Status.CREATED)
-                .entity(response)
-                .type(MediaType.APPLICATION_JSON)
-                .build();
     }
 
     /**

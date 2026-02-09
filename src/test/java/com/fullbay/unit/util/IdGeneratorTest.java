@@ -14,15 +14,15 @@ class IdGeneratorTest {
         String id = IdGenerator.generateUnitId();
 
         assertNotNull(id);
-        assertTrue(id.startsWith("unt-"));
-        assertEquals(11, id.length()); // "unt-" + 7 chars = 11
+        assertTrue(id.startsWith("unt_"));
+        assertEquals(11, id.length()); // "unt_" + 7 chars = 11
     }
 
     @Test
     void shouldGenerateLowercaseAlphanumeric() {
         for (int i = 0; i < 100; i++) {
             String id = IdGenerator.generateUnitId();
-            String suffix = id.substring(4); // Remove "unt-" prefix
+            String suffix = id.substring(4); // Remove "unt_" prefix
 
             assertTrue(suffix.matches("^[a-z0-9]{7}$"));
         }
