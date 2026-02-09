@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
@@ -64,7 +65,10 @@ public class UnitResource {
                         content =
                                 @Content(
                                         mediaType = MediaType.APPLICATION_JSON,
-                                        schema = @Schema(implementation = ApiResponse.class)))
+                                        schema =
+                                                @Schema(
+                                                        type = SchemaType.ARRAY,
+                                                        implementation = Unit.class)))
             })
     public ApiResponse<Map<String, Object>> listUnits(
             @QueryParam("customerId")
@@ -121,7 +125,7 @@ public class UnitResource {
                         content =
                                 @Content(
                                         mediaType = MediaType.APPLICATION_JSON,
-                                        schema = @Schema(implementation = ApiResponse.class))),
+                                        schema = @Schema(implementation = Unit.class))),
                 @APIResponse(responseCode = "404", description = "Unit not found")
             })
     public ApiResponse<Unit> getUnit(@PathParam("unitId") String unitId) {
@@ -152,7 +156,7 @@ public class UnitResource {
                         content =
                                 @Content(
                                         mediaType = MediaType.APPLICATION_JSON,
-                                        schema = @Schema(implementation = ApiResponse.class))),
+                                        schema = @Schema(implementation = Unit.class))),
                 @APIResponse(responseCode = "400", description = "Invalid request"),
                 @APIResponse(
                         responseCode = "409",
@@ -192,7 +196,7 @@ public class UnitResource {
                         content =
                                 @Content(
                                         mediaType = MediaType.APPLICATION_JSON,
-                                        schema = @Schema(implementation = ApiResponse.class))),
+                                        schema = @Schema(implementation = Unit.class))),
                 @APIResponse(responseCode = "404", description = "Unit not found")
             })
     public ApiResponse<Unit> updateUnit(
