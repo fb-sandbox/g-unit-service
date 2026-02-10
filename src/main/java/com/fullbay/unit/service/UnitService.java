@@ -9,6 +9,11 @@ import com.fullbay.unit.exception.UnitNotFoundException;
 import com.fullbay.unit.integration.nhtsa.NHTSAClient;
 import com.fullbay.unit.integration.nhtsa.NHTSAMapper;
 import com.fullbay.unit.integration.nhtsa.NHTSAVinDecodeResponse;
+import com.fullbay.unit.integration.parts.PartsApiResponse;
+import com.fullbay.unit.integration.parts.PartsMake;
+import com.fullbay.unit.integration.parts.PartsModel;
+import com.fullbay.unit.integration.parts.PartsServiceClient;
+import com.fullbay.unit.integration.parts.PartsVehicle;
 import com.fullbay.unit.model.dto.UpdateUnitRequest;
 import com.fullbay.unit.model.entity.Unit;
 import com.fullbay.unit.model.entity.Vehicle;
@@ -41,16 +46,19 @@ public class UnitService {
     private final UnitRepository unitRepository;
     private final VehicleRepository vehicleRepository;
     private final NHTSAClient nhtsaClient;
+    private final PartsServiceClient partsServiceClient;
     private final ObjectMapper objectMapper;
 
     public UnitService(
             UnitRepository unitRepository,
             VehicleRepository vehicleRepository,
             @RestClient NHTSAClient nhtsaClient,
+            @RestClient PartsServiceClient partsServiceClient,
             ObjectMapper objectMapper) {
         this.unitRepository = unitRepository;
         this.vehicleRepository = vehicleRepository;
         this.nhtsaClient = nhtsaClient;
+        this.partsServiceClient = partsServiceClient;
         this.objectMapper = objectMapper;
     }
 
@@ -96,6 +104,9 @@ public class UnitService {
                 log.error("Failed to map NHTSA response to vehicle for VIN: {}", vin);
                 throw new IllegalStateException("NHTSA response mapping failed for VIN: " + vin);
             }
+
+            // Enrich with VCDB IDs from parts-service
+            vehicle = enrichVehicleWithVcdbIds(vehicle);
 
             // Save vehicle data as VIN# item
             vehicleRepository.save(vehicle);
@@ -278,6 +289,85 @@ public class UnitService {
 
             unitRepository.delete(unitId);
             log.info("Deleted unit: {}", unitId);
+        }
+    }
+
+    /**
+     * Call parts-service to resolve VCDB baseVehicleId from year/make/model. Non-fatal: if the call
+     * fails or no match is found, the vehicle is returned unchanged.
+     */
+    private Vehicle enrichVehicleWithVcdbIds(Vehicle vehicle) {
+        if (vehicle.year() == null || vehicle.make() == null || vehicle.model() == null) {
+            log.debug("Skipping VCDB lookup - missing year/make/model");
+            return vehicle;
+        }
+
+        try (Subsegment segment = AWSXRay.beginSubsegment("parts-service-vcdb-lookup")) {
+            segment.putAnnotation("year", vehicle.year());
+            segment.putAnnotation("make", vehicle.make());
+            segment.putAnnotation("model", vehicle.model());
+
+            // Step 1: Resolve make name → makeId
+            final PartsApiResponse<java.util.List<PartsMake>> makesResponse =
+                    partsServiceClient.findMakesByName(vehicle.make());
+            if (makesResponse == null
+                    || makesResponse.getData() == null
+                    || makesResponse.getData().isEmpty()) {
+                log.info("No VCDB make match for: {}", vehicle.make());
+                return vehicle;
+            }
+            final String makeId = makesResponse.getData().get(0).getMakeId();
+
+            // Step 2: Resolve model name → modelId
+            final PartsApiResponse<java.util.List<PartsModel>> modelsResponse =
+                    partsServiceClient.findModelsByName(makeId, vehicle.model());
+            if (modelsResponse == null
+                    || modelsResponse.getData() == null
+                    || modelsResponse.getData().isEmpty()) {
+                log.info("No VCDB model match for: {} (makeId={})", vehicle.model(), makeId);
+                return vehicle;
+            }
+            final String modelId = modelsResponse.getData().get(0).getModelId();
+
+            // Step 3: Resolve year/makeId/modelId → baseVehicleId
+            final PartsApiResponse<java.util.List<PartsVehicle>> vehiclesResponse =
+                    partsServiceClient.findVehicles(
+                            String.valueOf(vehicle.year()), makeId, modelId);
+            if (vehiclesResponse == null
+                    || vehiclesResponse.getData() == null
+                    || vehiclesResponse.getData().isEmpty()) {
+                log.info(
+                        "No VCDB vehicle match for year={}, makeId={}, modelId={}",
+                        vehicle.year(),
+                        makeId,
+                        modelId);
+                return vehicle;
+            }
+
+            final PartsVehicle match = vehiclesResponse.getData().get(0);
+            log.info(
+                    "VCDB match: baseVehicleId={}, makeId={}, modelId={}",
+                    match.getBaseVehicleId(),
+                    makeId,
+                    modelId);
+
+            Vehicle enriched = vehicle;
+            if (match.getBaseVehicleId() != null) {
+                enriched = enriched.withBaseVehicleId(Integer.parseInt(match.getBaseVehicleId()));
+                segment.putAnnotation("baseVehicleId", match.getBaseVehicleId());
+            }
+            if (makeId != null) {
+                enriched = enriched.withMakeId(Integer.parseInt(makeId));
+            }
+            if (modelId != null) {
+                enriched = enriched.withModelId(Integer.parseInt(modelId));
+            }
+            return enriched;
+        } catch (Exception e) {
+            log.warn(
+                    "Parts-service VCDB lookup failed, continuing without VCDB IDs: {}",
+                    e.getMessage());
+            return vehicle;
         }
     }
 

@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fullbay.unit.exception.UnitNotFoundException;
 import com.fullbay.unit.integration.nhtsa.NHTSAClient;
+import com.fullbay.unit.integration.parts.PartsServiceClient;
 import com.fullbay.unit.model.dto.UpdateUnitRequest;
 import com.fullbay.unit.model.entity.Unit;
 import com.fullbay.unit.model.entity.Vehicle;
@@ -38,6 +39,7 @@ class UnitServiceTest {
     @Mock UnitRepository repository;
     @Mock VehicleRepository vehicleRepository;
     @Mock NHTSAClient nhtsaClient;
+    @Mock PartsServiceClient partsServiceClient;
 
     private ObjectMapper objectMapper;
     private Unit testEntity;
@@ -54,7 +56,13 @@ class UnitServiceTest {
                 .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
                 .setVisibility(PropertyAccessor.CREATOR, JsonAutoDetect.Visibility.ANY)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        service = new UnitService(repository, vehicleRepository, nhtsaClient, objectMapper);
+        service =
+                new UnitService(
+                        repository,
+                        vehicleRepository,
+                        nhtsaClient,
+                        partsServiceClient,
+                        objectMapper);
 
         final Instant now = Instant.now();
         testEntity =
