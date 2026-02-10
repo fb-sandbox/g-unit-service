@@ -38,7 +38,6 @@ class UnitServiceTest {
     @Mock UnitRepository repository;
     @Mock VehicleRepository vehicleRepository;
     @Mock NHTSAClient nhtsaClient;
-    @Mock VcdbLookupService vcdbLookupService;
 
     private ObjectMapper objectMapper;
     private Unit testEntity;
@@ -55,13 +54,7 @@ class UnitServiceTest {
                 .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
                 .setVisibility(PropertyAccessor.CREATOR, JsonAutoDetect.Visibility.ANY)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        service =
-                new UnitService(
-                        repository,
-                        vehicleRepository,
-                        nhtsaClient,
-                        vcdbLookupService,
-                        objectMapper);
+        service = new UnitService(repository, vehicleRepository, nhtsaClient, objectMapper);
 
         final Instant now = Instant.now();
         testEntity =

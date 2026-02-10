@@ -41,19 +41,16 @@ public class UnitService {
     private final UnitRepository unitRepository;
     private final VehicleRepository vehicleRepository;
     private final NHTSAClient nhtsaClient;
-    private final VcdbLookupService vcdbLookupService;
     private final ObjectMapper objectMapper;
 
     public UnitService(
             UnitRepository unitRepository,
             VehicleRepository vehicleRepository,
             @RestClient NHTSAClient nhtsaClient,
-            VcdbLookupService vcdbLookupService,
             ObjectMapper objectMapper) {
         this.unitRepository = unitRepository;
         this.vehicleRepository = vehicleRepository;
         this.nhtsaClient = nhtsaClient;
-        this.vcdbLookupService = vcdbLookupService;
         this.objectMapper = objectMapper;
     }
 
@@ -98,26 +95,6 @@ public class UnitService {
             if (vehicle == null) {
                 log.error("Failed to map NHTSA response to vehicle for VIN: {}", vin);
                 throw new IllegalStateException("NHTSA response mapping failed for VIN: " + vin);
-            }
-
-            // Look up VCdb BaseVehicleID from year/make/model
-            final Optional<Integer> baseVehicleId =
-                    vcdbLookupService.lookupBaseVehicleId(
-                            vehicle.year(), vehicle.make(), vehicle.model());
-            if (baseVehicleId.isPresent()) {
-                vehicle = vehicle.withBaseVehicleId(baseVehicleId.get());
-                segment.putAnnotation("baseVehicleId", baseVehicleId.get());
-            }
-
-            // Look up VCdb EngineBaseID from displacement/cylinders/configuration
-            final Optional<Integer> engineBaseId =
-                    vcdbLookupService.lookupEngineBaseId(
-                            vehicle.displacementLiters(),
-                            vehicle.engineCylinders(),
-                            vehicle.engineConfiguration());
-            if (engineBaseId.isPresent()) {
-                vehicle = vehicle.withEngineBaseId(engineBaseId.get());
-                segment.putAnnotation("engineBaseId", engineBaseId.get());
             }
 
             // Save vehicle data as VIN# item

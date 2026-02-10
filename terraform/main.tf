@@ -115,61 +115,6 @@ resource "aws_iam_role_policy" "dynamodb_policy" {
   })
 }
 
-# IAM Policy for Athena/Glue/S3 (ACES & VCdb lookups)
-resource "aws_iam_role_policy" "athena_policy" {
-  name = "${local.stack_id}-athena"
-  role = aws_iam_role.lambda_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "athena:StartQueryExecution",
-          "athena:GetQueryExecution",
-          "athena:GetQueryResults",
-          "athena:StopQueryExecution"
-        ]
-        Resource = "arn:aws:athena:${local.region}:${data.aws_caller_identity.current.account_id}:workgroup/g-acespies"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "glue:GetTable",
-          "glue:GetTables",
-          "glue:GetDatabase",
-          "glue:GetPartitions"
-        ]
-        Resource = [
-          "arn:aws:glue:${local.region}:${data.aws_caller_identity.current.account_id}:catalog",
-          "arn:aws:glue:${local.region}:${data.aws_caller_identity.current.account_id}:database/g_acespies",
-          "arn:aws:glue:${local.region}:${data.aws_caller_identity.current.account_id}:table/g_acespies/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket",
-          "s3:GetBucketLocation"
-        ]
-        Resource = [
-          "arn:aws:s3:::g-acespies-${data.aws_caller_identity.current.account_id}-${local.region}",
-          "arn:aws:s3:::g-acespies-${data.aws_caller_identity.current.account_id}-${local.region}/*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:PutObject",
-          "s3:GetObject"
-        ]
-        Resource = "arn:aws:s3:::g-acespies-${data.aws_caller_identity.current.account_id}-${local.region}/athena-results/*"
-      }
-    ]
-  })
-}
 
 # IAM Policy for CloudWatch Logs
 resource "aws_iam_role_policy_attachment" "lambda_logs_policy" {
