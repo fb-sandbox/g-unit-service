@@ -39,7 +39,8 @@ public class UnitRepository {
     String tableName;
 
     /**
-     * Save or update a Unit entity as JSON.
+     * Save or update a Unit entity as JSON. Only persists association fields (unitId, customerId,
+     * vin, attributes, timestamps). Vehicle data is stored separately in VIN# items.
      *
      * @param entity The entity to save
      */
@@ -51,9 +52,21 @@ public class UnitRepository {
             final String pk = "UNT#" + entity.unitId();
             final String sk = "UNT#" + entity.unitId();
 
-            // Serialize entire Unit to DynamoDB MAP, filtering out NULL values
+            // Build slim Unit with only association fields; vehicle fields are null
+            // and filtered out by NON_NULL serialization
+            final Unit slimUnit =
+                    Unit.builder()
+                            .unitId(entity.unitId())
+                            .customerId(entity.customerId())
+                            .vin(entity.vin())
+                            .attributes(entity.attributes())
+                            .createdAt(entity.createdAt())
+                            .updatedAt(entity.updatedAt())
+                            .build();
+
+            // Serialize slim Unit to DynamoDB MAP, filtering out NULL values
             final Map<String, AttributeValue> unitMap =
-                    jacksonConverter.objectToMap(entity).entrySet().stream()
+                    jacksonConverter.objectToMap(slimUnit).entrySet().stream()
                             .filter(e -> e.getValue().nul() == null || !e.getValue().nul())
                             .collect(
                                     java.util.stream.Collectors.toMap(

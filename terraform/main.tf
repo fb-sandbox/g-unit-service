@@ -99,6 +99,7 @@ resource "aws_iam_role_policy" "dynamodb_policy" {
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem",
+          "dynamodb:BatchGetItem",
           "dynamodb:PutItem",
           "dynamodb:UpdateItem",
           "dynamodb:DeleteItem",
@@ -109,6 +110,62 @@ resource "aws_iam_role_policy" "dynamodb_policy" {
           aws_dynamodb_table.units.arn,
           "${aws_dynamodb_table.units.arn}/index/*"
         ]
+      }
+    ]
+  })
+}
+
+# IAM Policy for Athena/Glue/S3 (ACES & VCdb lookups)
+resource "aws_iam_role_policy" "athena_policy" {
+  name = "${local.stack_id}-athena"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "athena:StartQueryExecution",
+          "athena:GetQueryExecution",
+          "athena:GetQueryResults",
+          "athena:StopQueryExecution"
+        ]
+        Resource = "arn:aws:athena:${local.region}:${data.aws_caller_identity.current.account_id}:workgroup/g-acespies"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "glue:GetTable",
+          "glue:GetTables",
+          "glue:GetDatabase",
+          "glue:GetPartitions"
+        ]
+        Resource = [
+          "arn:aws:glue:${local.region}:${data.aws_caller_identity.current.account_id}:catalog",
+          "arn:aws:glue:${local.region}:${data.aws_caller_identity.current.account_id}:database/g_acespies",
+          "arn:aws:glue:${local.region}:${data.aws_caller_identity.current.account_id}:table/g_acespies/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          "arn:aws:s3:::g-acespies-${data.aws_caller_identity.current.account_id}-${local.region}",
+          "arn:aws:s3:::g-acespies-${data.aws_caller_identity.current.account_id}-${local.region}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject"
+        ]
+        Resource = "arn:aws:s3:::g-acespies-${data.aws_caller_identity.current.account_id}-${local.region}/athena-results/*"
       }
     ]
   })
@@ -132,9 +189,10 @@ resource "aws_lambda_function" "unit_service" {
   function_name   = local.stack_id
   role            = aws_iam_role.lambda_role.arn
   handler         = "io.quarkus.amazon.lambda.runtime.QuarkusStreamHandler::handleRequest"
-  runtime         = "java21"
-  timeout         = 15
-  memory_size     = 1024
+  runtime          = "java21"
+  timeout          = 15
+  memory_size      = 1024
+  publish          = true
   source_code_hash = filebase64sha256(var.lambda_zip_path)
 
   environment {
@@ -154,4 +212,11 @@ resource "aws_lambda_function" "unit_service" {
     aws_iam_role_policy_attachment.lambda_logs_policy,
     aws_iam_role_policy_attachment.lambda_xray_policy
   ]
+}
+
+# Lambda Alias - routes ALB traffic through a published version (required for SnapStart)
+resource "aws_lambda_alias" "live" {
+  name             = "live"
+  function_name    = aws_lambda_function.unit_service.function_name
+  function_version = aws_lambda_function.unit_service.version
 }

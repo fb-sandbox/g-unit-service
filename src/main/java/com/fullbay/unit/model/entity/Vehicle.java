@@ -7,19 +7,16 @@ import lombok.experimental.Wither;
 import lombok.extern.jackson.Jacksonized;
 
 import java.time.Instant;
-import java.util.Map;
 
-/** Unit (vehicle/equipment). Comprehensive NHTSA VIN decode schema. Stored as JSON in DynamoDB. */
+/** Vehicle data decoded from NHTSA VIN API. Stored once per VIN as VIN# items in DynamoDB. */
 @Builder
 @Value
 @Accessors(fluent = true)
 @Jacksonized
 @Wither
-public class Unit {
+public class Vehicle {
 
-    // Identifiers
-    String unitId;
-    String customerId;
+    // Identifier
     String vin;
 
     // Vehicle Identification (NHTSA Basic Info)
@@ -201,9 +198,6 @@ public class Unit {
     String suggestedVin;
     String possibleValues;
     String note;
-
-    // Flexible Storage
-    Map<String, Object> attributes;
 
     // Timestamps
     Instant createdAt;

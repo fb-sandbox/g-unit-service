@@ -2,6 +2,8 @@ package com.fullbay.unit.service;
 
 import com.amazonaws.xray.AWSXRay;
 import com.amazonaws.xray.entities.Subsegment;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fullbay.unit.exception.DuplicateVinException;
 import com.fullbay.unit.exception.UnitNotFoundException;
 import com.fullbay.unit.integration.nhtsa.NHTSAClient;
@@ -9,7 +11,9 @@ import com.fullbay.unit.integration.nhtsa.NHTSAMapper;
 import com.fullbay.unit.integration.nhtsa.NHTSAVinDecodeResponse;
 import com.fullbay.unit.model.dto.UpdateUnitRequest;
 import com.fullbay.unit.model.entity.Unit;
+import com.fullbay.unit.model.entity.Vehicle;
 import com.fullbay.unit.repository.UnitRepository;
+import com.fullbay.unit.repository.VehicleRepository;
 import com.fullbay.unit.util.IdGenerator;
 
 import jakarta.annotation.PostConstruct;
@@ -20,18 +24,37 @@ import lombok.extern.slf4j.Slf4j;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /** Service for Unit business logic. */
 @ApplicationScoped
 @Slf4j
 public class UnitService {
 
-    private final UnitRepository unitRepository;
-    private final NHTSAClient nhtsaClient;
+    private static final TypeReference<Map<String, Object>> MAP_TYPE_REF = new TypeReference<>() {};
+    private static final Set<String> UNIT_FIELD_NAMES =
+            Set.of("unitId", "customerId", "vin", "attributes", "createdAt", "updatedAt");
 
-    public UnitService(UnitRepository unitRepository, @RestClient NHTSAClient nhtsaClient) {
+    private final UnitRepository unitRepository;
+    private final VehicleRepository vehicleRepository;
+    private final NHTSAClient nhtsaClient;
+    private final VcdbLookupService vcdbLookupService;
+    private final ObjectMapper objectMapper;
+
+    public UnitService(
+            UnitRepository unitRepository,
+            VehicleRepository vehicleRepository,
+            @RestClient NHTSAClient nhtsaClient,
+            VcdbLookupService vcdbLookupService,
+            ObjectMapper objectMapper) {
         this.unitRepository = unitRepository;
+        this.vehicleRepository = vehicleRepository;
         this.nhtsaClient = nhtsaClient;
+        this.vcdbLookupService = vcdbLookupService;
+        this.objectMapper = objectMapper;
     }
 
     /** SnapStart warmup: initialize service on startup. */
@@ -41,12 +64,13 @@ public class UnitService {
     }
 
     /**
-     * Create a new Unit from VIN by calling NHTSA API.
+     * Create a new Unit from VIN by calling NHTSA API. Saves vehicle data as a separate VIN# item
+     * and the unit association as a slim UNT# item.
      *
      * @param vin The VIN to decode
      * @param customerId The customer ID
-     * @return The created unit DTO
-     * @throws DuplicateVinException if VIN already exists
+     * @return The created unit enriched with vehicle data
+     * @throws DuplicateVinException if VIN already exists for this customer
      */
     public Unit createUnitFromVin(String vin, String customerId) {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-service-createUnitFromVin")) {
@@ -69,32 +93,66 @@ public class UnitService {
             log.debug("Calling NHTSA API for VIN: {}", vin);
             final NHTSAVinDecodeResponse nhtsaResponse = nhtsaClient.decodeVin(vin, "json");
 
-            // Map NHTSA response to entity
-            final Unit entity = NHTSAMapper.toEntity(nhtsaResponse, vin, customerId, unitId);
-            if (entity == null) {
-                log.error("Failed to map NHTSA response to entity for VIN: {}", vin);
+            // Map NHTSA response to Vehicle entity
+            Vehicle vehicle = NHTSAMapper.toVehicle(nhtsaResponse, vin);
+            if (vehicle == null) {
+                log.error("Failed to map NHTSA response to vehicle for VIN: {}", vin);
                 throw new IllegalStateException("NHTSA response mapping failed for VIN: " + vin);
             }
 
-            unitRepository.save(entity);
+            // Look up VCdb BaseVehicleID from year/make/model
+            final Optional<Integer> baseVehicleId =
+                    vcdbLookupService.lookupBaseVehicleId(
+                            vehicle.year(), vehicle.make(), vehicle.model());
+            if (baseVehicleId.isPresent()) {
+                vehicle = vehicle.withBaseVehicleId(baseVehicleId.get());
+                segment.putAnnotation("baseVehicleId", baseVehicleId.get());
+            }
+
+            // Look up VCdb EngineBaseID from displacement/cylinders/configuration
+            final Optional<Integer> engineBaseId =
+                    vcdbLookupService.lookupEngineBaseId(
+                            vehicle.displacementLiters(),
+                            vehicle.engineCylinders(),
+                            vehicle.engineConfiguration());
+            if (engineBaseId.isPresent()) {
+                vehicle = vehicle.withEngineBaseId(engineBaseId.get());
+                segment.putAnnotation("engineBaseId", engineBaseId.get());
+            }
+
+            // Save vehicle data as VIN# item
+            vehicleRepository.save(vehicle);
+
+            // Build slim unit association and save as UNT# item
+            final java.time.Instant now = java.time.Instant.now();
+            final Unit unit =
+                    Unit.builder()
+                            .unitId(unitId)
+                            .customerId(customerId)
+                            .vin(vin)
+                            .createdAt(now)
+                            .updatedAt(now)
+                            .build();
+            unitRepository.save(unit);
             log.info("Created unit from VIN: {}", unitId);
 
-            return entity;
+            // Return enriched unit with vehicle data for the API response
+            return enrichWithVehicle(unit, vehicle);
         }
     }
 
     /**
-     * Get a Unit by ID.
+     * Get a Unit by ID, enriched with vehicle data.
      *
      * @param unitId The unit ID
-     * @return The unit DTO
+     * @return The unit enriched with vehicle data
      * @throws UnitNotFoundException if unit not found
      */
     public Unit getUnitById(String unitId) {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-service-getUnitById")) {
             segment.putAnnotation("unitId", unitId);
 
-            final Unit entity =
+            final Unit unit =
                     unitRepository
                             .findById(unitId)
                             .orElseThrow(
@@ -103,13 +161,14 @@ public class UnitService {
                                         return new UnitNotFoundException(unitId);
                                     });
 
+            final Optional<Vehicle> vehicle = vehicleRepository.findByVin(unit.vin());
             log.debug("Retrieved unit: {}", unitId);
-            return entity;
+            return enrichWithVehicle(unit, vehicle.orElse(null));
         }
     }
 
     /**
-     * Get Units by Customer ID and VIN.
+     * Get Units by Customer ID and VIN, enriched with vehicle data.
      *
      * @param customerId The customer ID
      * @param vin The VIN
@@ -121,14 +180,14 @@ public class UnitService {
             segment.putAnnotation("customerId", customerId);
             segment.putAnnotation("vin", vin);
 
-            final List<Unit> entities = unitRepository.findByCustomerIdAndVin(customerId, vin);
-            log.debug("Found {} units for customer: {} vin: {}", entities.size(), customerId, vin);
-            return entities;
+            final List<Unit> units = unitRepository.findByCustomerIdAndVin(customerId, vin);
+            log.debug("Found {} units for customer: {} vin: {}", units.size(), customerId, vin);
+            return enrichWithVehicles(units);
         }
     }
 
     /**
-     * Get Units by VIN (across all customers).
+     * Get Units by VIN (across all customers), enriched with vehicle data.
      *
      * @param vin The VIN to search for
      * @return List of matching units
@@ -137,14 +196,14 @@ public class UnitService {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-service-getUnitsByVin")) {
             segment.putAnnotation("vin", vin);
 
-            final List<Unit> entities = unitRepository.findByVin(vin);
-            log.debug("Found {} units for vin: {}", entities.size(), vin);
-            return entities;
+            final List<Unit> units = unitRepository.findByVin(vin);
+            log.debug("Found {} units for vin: {}", units.size(), vin);
+            return enrichWithVehicles(units);
         }
     }
 
     /**
-     * Get Units by Customer ID.
+     * Get Units by Customer ID, enriched with vehicle data.
      *
      * @param customerId The customer ID
      * @return List of unit DTOs
@@ -153,18 +212,18 @@ public class UnitService {
         try (Subsegment segment = AWSXRay.beginSubsegment("unit-service-getUnitsByCustomerId")) {
             segment.putAnnotation("customerId", customerId);
 
-            final List<Unit> entities = unitRepository.findByCustomerId(customerId);
-            log.debug("Retrieved {} units for customer: {}", entities.size(), customerId);
-            return entities;
+            final List<Unit> units = unitRepository.findByCustomerId(customerId);
+            log.debug("Retrieved {} units for customer: {}", units.size(), customerId);
+            return enrichWithVehicles(units);
         }
     }
 
     /**
-     * Update a Unit.
+     * Update a Unit's association fields (customerId, vin, attributes). Vehicle data is read-only.
      *
      * @param unitId The unit ID
      * @param request The update request
-     * @return The updated unit DTO
+     * @return The updated unit enriched with vehicle data
      * @throws UnitNotFoundException if unit not found
      */
     public Unit updateUnit(String unitId, UpdateUnitRequest request) {
@@ -186,9 +245,9 @@ public class UnitService {
                         request.getCustomerId() != null
                                 ? request.getCustomerId()
                                 : entity.customerId();
-                final List<Unit> existing =
+                final List<Unit> duplicates =
                         unitRepository.findByCustomerIdAndVin(targetCustomerId, request.getVin());
-                if (!existing.isEmpty()) {
+                if (!duplicates.isEmpty()) {
                     log.warn(
                             "Duplicate VIN detected during update for customer {}: {}",
                             targetCustomerId,
@@ -197,115 +256,13 @@ public class UnitService {
                 }
             }
 
-            // Use @With to create immutable copy with updates
+            // Update only association fields
             Unit updated = entity;
             if (request.getCustomerId() != null) {
                 updated = updated.withCustomerId(request.getCustomerId());
             }
             if (request.getVin() != null) {
                 updated = updated.withVin(request.getVin());
-            }
-            if (request.getYear() != null) {
-                updated = updated.withYear(request.getYear());
-            }
-            if (request.getMake() != null) {
-                updated = updated.withMake(request.getMake());
-            }
-            if (request.getManufacturer() != null) {
-                updated = updated.withManufacturer(request.getManufacturer());
-            }
-            if (request.getModel() != null) {
-                updated = updated.withModel(request.getModel());
-            }
-            if (request.getTrim() != null) {
-                updated = updated.withTrim(request.getTrim());
-            }
-            if (request.getSubmodel() != null) {
-                updated = updated.withSubmodel(request.getSubmodel());
-            }
-            if (request.getUnitType() != null) {
-                updated = updated.withUnitType(request.getUnitType());
-            }
-            if (request.getVehicleType() != null) {
-                updated = updated.withVehicleType(request.getVehicleType());
-            }
-            if (request.getBodyClass() != null) {
-                updated = updated.withBodyClass(request.getBodyClass());
-            }
-            if (request.getBodyType() != null) {
-                updated = updated.withBodyType(request.getBodyType());
-            }
-            if (request.getFuelType() != null) {
-                updated = updated.withFuelType(request.getFuelType());
-            }
-            if (request.getEngineType() != null) {
-                updated = updated.withEngineType(request.getEngineType());
-            }
-            if (request.getEngineManufacturer() != null) {
-                updated = updated.withEngineManufacturer(request.getEngineManufacturer());
-            }
-            if (request.getEngineModel() != null) {
-                updated = updated.withEngineModel(request.getEngineModel());
-            }
-            if (request.getEngineCylinders() != null) {
-                updated = updated.withEngineCylinders(request.getEngineCylinders());
-            }
-            if (request.getEngineHP() != null) {
-                updated = updated.withEngineHP(request.getEngineHP());
-            }
-            if (request.getEngineHPMax() != null) {
-                updated = updated.withEngineHPMax(request.getEngineHPMax());
-            }
-            if (request.getDisplacementLiters() != null) {
-                updated = updated.withDisplacementLiters(request.getDisplacementLiters());
-            }
-            if (request.getEngineConfiguration() != null) {
-                updated = updated.withEngineConfiguration(request.getEngineConfiguration());
-            }
-            if (request.getOtherEngineInfo() != null) {
-                updated = updated.withOtherEngineInfo(request.getOtherEngineInfo());
-            }
-            if (request.getTransmissionType() != null) {
-                updated = updated.withTransmissionType(request.getTransmissionType());
-            }
-            if (request.getDriveType() != null) {
-                updated = updated.withDriveType(request.getDriveType());
-            }
-            if (request.getBrakeSystemType() != null) {
-                updated = updated.withBrakeSystemType(request.getBrakeSystemType());
-            }
-            if (request.getDoors() != null) {
-                updated = updated.withDoors(request.getDoors());
-            }
-            if (request.getSeats() != null) {
-                updated = updated.withSeats(request.getSeats());
-            }
-            if (request.getCurbWeightLB() != null) {
-                updated = updated.withCurbWeightLB(request.getCurbWeightLB());
-            }
-            if (request.getGvwr() != null) {
-                updated = updated.withGvwr(request.getGvwr());
-            }
-            if (request.getBedLengthIN() != null) {
-                updated = updated.withBedLengthIN(request.getBedLengthIN());
-            }
-            if (request.getWheelbaseIN() != null) {
-                updated = updated.withWheelbaseIN(request.getWheelbaseIN());
-            }
-            if (request.getPlantCity() != null) {
-                updated = updated.withPlantCity(request.getPlantCity());
-            }
-            if (request.getPlantState() != null) {
-                updated = updated.withPlantState(request.getPlantState());
-            }
-            if (request.getPlantCountry() != null) {
-                updated = updated.withPlantCountry(request.getPlantCountry());
-            }
-            if (request.getSeatBelts() != null) {
-                updated = updated.withSeatBelts(request.getSeatBelts());
-            }
-            if (request.getAirBagsFront() != null) {
-                updated = updated.withAirBagsFront(request.getAirBagsFront());
             }
             if (request.getAttributes() != null) {
                 updated = updated.withAttributes(request.getAttributes());
@@ -317,12 +274,14 @@ public class UnitService {
             unitRepository.update(updated);
             log.info("Updated unit: {}", unitId);
 
-            return updated;
+            // Return enriched with vehicle data from the (possibly new) VIN
+            final Optional<Vehicle> vehicle = vehicleRepository.findByVin(updated.vin());
+            return enrichWithVehicle(updated, vehicle.orElse(null));
         }
     }
 
     /**
-     * Delete a Unit.
+     * Delete a Unit association. Vehicle data (VIN# item) is left for other units sharing the VIN.
      *
      * @param unitId The unit ID
      * @throws UnitNotFoundException if unit not found
@@ -343,5 +302,32 @@ public class UnitService {
             unitRepository.delete(unitId);
             log.info("Deleted unit: {}", unitId);
         }
+    }
+
+    /**
+     * Merge vehicle data into a Unit using ObjectMapper. Unit's own fields (unitId, customerId,
+     * vin, attributes, timestamps) take precedence over vehicle fields.
+     */
+    private Unit enrichWithVehicle(Unit unit, Vehicle vehicle) {
+        if (vehicle == null) {
+            return unit;
+        }
+        final Map<String, Object> unitMap = objectMapper.convertValue(unit, MAP_TYPE_REF);
+        final Map<String, Object> vehicleMap = objectMapper.convertValue(vehicle, MAP_TYPE_REF);
+        // Remove unit-specific keys from vehicle map so unit's own fields take precedence
+        vehicleMap.keySet().removeAll(UNIT_FIELD_NAMES);
+        unitMap.putAll(vehicleMap);
+        return objectMapper.convertValue(unitMap, Unit.class);
+    }
+
+    /** Enrich a list of units with vehicle data. Deduplicates VINs for efficient batch lookup. */
+    private List<Unit> enrichWithVehicles(List<Unit> units) {
+        if (units.isEmpty()) {
+            return units;
+        }
+        final Set<String> vins =
+                units.stream().map(Unit::vin).filter(v -> v != null).collect(Collectors.toSet());
+        final Map<String, Vehicle> vehicleMap = vehicleRepository.findByVins(vins);
+        return units.stream().map(u -> enrichWithVehicle(u, vehicleMap.get(u.vin()))).toList();
     }
 }

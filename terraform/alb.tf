@@ -27,6 +27,7 @@ resource "aws_lambda_permission" "allow_alb" {
   statement_id  = "AllowExecutionFromALB"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.unit_service.function_name
+  qualifier     = aws_lambda_alias.live.name
   principal     = "elasticloadbalancing.amazonaws.com"
   source_arn    = aws_lb_target_group.unit_service.arn
 }
@@ -34,7 +35,7 @@ resource "aws_lambda_permission" "allow_alb" {
 # Register Lambda with Target Group
 resource "aws_lb_target_group_attachment" "unit_service" {
   target_group_arn = aws_lb_target_group.unit_service.arn
-  target_id        = aws_lambda_function.unit_service.arn
+  target_id        = aws_lambda_alias.live.arn
   depends_on       = [aws_lambda_permission.allow_alb]
 }
 

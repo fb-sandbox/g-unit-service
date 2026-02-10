@@ -1,9 +1,11 @@
 package com.fullbay.unit.resource;
 
 import com.fullbay.unit.model.dto.CreateUnitFromVinRequest;
+import com.fullbay.unit.model.dto.PartDto;
 import com.fullbay.unit.model.dto.UpdateUnitRequest;
 import com.fullbay.unit.model.entity.Unit;
 import com.fullbay.unit.model.response.ApiResponse;
+import com.fullbay.unit.service.AcesLookupService;
 import com.fullbay.unit.service.UnitService;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -44,6 +46,7 @@ import java.util.Map;
 public class UnitResource {
 
     private final UnitService unitService;
+    private final AcesLookupService acesLookupService;
 
     /**
      * List units or search by query parameters.
@@ -224,5 +227,107 @@ public class UnitResource {
         log.info("Delete unit request - unitId: {}", unitId);
         unitService.deleteUnit(unitId);
         return Response.noContent().build();
+    }
+
+    /**
+     * List aftermarket parts that fit a unit, optionally filtered by category.
+     *
+     * @param unitId The unit ID
+     * @param category Optional part category filter
+     * @return API response with parts list
+     */
+    @GET
+    @Path("/{unitId}/parts")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(
+            summary = "List parts for unit",
+            description =
+                    "List aftermarket parts that fit this unit based on ACES fitment data. Optionally filter by part category.")
+    @APIResponses(
+            value = {
+                @APIResponse(
+                        responseCode = "200",
+                        description = "Parts retrieved successfully",
+                        content =
+                                @Content(
+                                        mediaType = MediaType.APPLICATION_JSON,
+                                        schema =
+                                                @Schema(
+                                                        type = SchemaType.ARRAY,
+                                                        implementation = PartDto.class))),
+                @APIResponse(responseCode = "404", description = "Unit not found")
+            })
+    public ApiResponse<Map<String, Object>> listPartsForUnit(
+            @PathParam("unitId") String unitId,
+            @QueryParam("category")
+                    @Parameter(
+                            name = "category",
+                            description = "Filter parts by category (optional)")
+                    String category) {
+        log.info("List parts request - unitId: {}, category: {}", unitId, category);
+
+        final Unit unit = unitService.getUnitById(unitId);
+
+        if (unit.baseVehicleId() == null) {
+            log.info("Unit {} has no baseVehicleId - returning empty parts list", unitId);
+            return ApiResponse.<Map<String, Object>>builder()
+                    .data(Map.of("items", List.of(), "count", 0))
+                    .build();
+        }
+
+        final List<PartDto> parts =
+                acesLookupService.findPartsForVehicle(
+                        unit.baseVehicleId(), unit.engineBaseId(), category);
+        return ApiResponse.<Map<String, Object>>builder()
+                .data(Map.of("items", parts, "count", parts.size()))
+                .build();
+    }
+
+    /**
+     * List distinct part categories available for a unit.
+     *
+     * @param unitId The unit ID
+     * @return API response with categories list
+     */
+    @GET
+    @Path("/{unitId}/parts/categories")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Operation(
+            summary = "List part categories for unit",
+            description =
+                    "List distinct part categories available for this unit based on ACES fitment data.")
+    @APIResponses(
+            value = {
+                @APIResponse(
+                        responseCode = "200",
+                        description = "Categories retrieved successfully",
+                        content =
+                                @Content(
+                                        mediaType = MediaType.APPLICATION_JSON,
+                                        schema =
+                                                @Schema(
+                                                        type = SchemaType.ARRAY,
+                                                        implementation = String.class))),
+                @APIResponse(responseCode = "404", description = "Unit not found")
+            })
+    public ApiResponse<Map<String, Object>> listPartCategoriesForUnit(
+            @PathParam("unitId") String unitId) {
+        log.info("List part categories request - unitId: {}", unitId);
+
+        final Unit unit = unitService.getUnitById(unitId);
+
+        if (unit.baseVehicleId() == null) {
+            log.info("Unit {} has no baseVehicleId - returning empty categories list", unitId);
+            return ApiResponse.<Map<String, Object>>builder()
+                    .data(Map.of("items", List.of(), "count", 0))
+                    .build();
+        }
+
+        final List<String> categories =
+                acesLookupService.findCategoriesForVehicle(
+                        unit.baseVehicleId(), unit.engineBaseId());
+        return ApiResponse.<Map<String, Object>>builder()
+                .data(Map.of("items", categories, "count", categories.size()))
+                .build();
     }
 }
