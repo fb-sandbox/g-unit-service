@@ -6,8 +6,8 @@ import com.fullbay.unit.model.entity.Vehicle;
 import com.fullbay.util.JacksonConverter;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
-import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,15 +30,23 @@ import java.util.Set;
 
 /** Repository for DynamoDB Vehicle operations. Stores vehicle data once per VIN. */
 @ApplicationScoped
-@RequiredArgsConstructor
 @Slf4j
 public class VehicleRepository {
 
     private final DynamoDbClient dynamoDbClient;
     private final JacksonConverter jacksonConverter;
+    private final String tableName;
 
-    @ConfigProperty(name = "dynamodb.table.name", defaultValue = "g-unit-service")
-    String tableName;
+    @Inject
+    public VehicleRepository(
+            final DynamoDbClient dynamoDbClient,
+            final JacksonConverter jacksonConverter,
+            @ConfigProperty(name = "dynamodb.table.name", defaultValue = "g-unit-service")
+                    final String tableName) {
+        this.dynamoDbClient = dynamoDbClient;
+        this.jacksonConverter = jacksonConverter;
+        this.tableName = tableName;
+    }
 
     private static final int BATCH_GET_CHUNK_SIZE = 100;
 
